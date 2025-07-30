@@ -242,14 +242,14 @@ export default function Home() {
       {/* Input Section */}
       <div className="mb-6">
         <label htmlFor="jsonInput" className="block text-sm font-medium text-gray-700 mb-2">
-          Paste GraphQL Response:
+          Cole a Resposta GraphQL:
         </label>
         <textarea
           id="jsonInput"
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           className="w-full h-64 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-          placeholder='Paste your GraphQL response here (e.g., {"data":{"lands":{"edges":[...]}}...})'
+          placeholder='Cole sua resposta GraphQL aqui (ex: {"data":{"lands":{"edges":[...]}}...})'
         />
       </div>
 
@@ -260,47 +260,78 @@ export default function Home() {
           disabled={!inputText.trim() || isGenerating}
           className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-2 rounded-md font-medium transition-colors"
         >
-          {isGenerating ? 'Generating...' : 'Generate Download Links'}
+          {isGenerating ? 'Gerando...' : 'Gerar Links de Download'}
         </button>
       </div>
 
       {/* Download Links Section */}
       {downloadItems.length > 0 && (
         <div className="space-y-4">
-          <h2 className="text-xl font-semibold mb-4">Download Links ({downloadItems.length} items)</h2>
+          <h2 className="text-xl font-semibold mb-4">Links de Download ({downloadItems.length} itens)</h2>
           <div className="grid gap-4">
             {downloadItems.map((item, index) => (
               <div key={item.uuid} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm">
-                <div className="flex items-center justify-between mb-2">
-                  <div>
-                    <h3 className="font-medium text-gray-900">{item.name}</h3>
-                    <p className="text-sm text-gray-500">UUID: {item.uuid}</p>
-                  </div>
+                <div className="mb-4">
+                  <h3 className="font-medium text-gray-900">{item.name}</h3>
+                  <p className="text-sm text-gray-500">UUID: {item.uuid}</p>
+                </div>
+                
+                <div className="flex flex-wrap gap-2 mb-2">
                   <button
-                    onClick={() => fetchAndCopyGeoJson(item, index)}
+                    onClick={() => copyToClipboard(item, index)}
+                    disabled={item.isLoading}
+                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2"
+                  >
+                    {item.isLoading ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                        Carregando...
+                      </>
+                    ) : (
+                      'Copiar conteúdo'
+                    )}
+                  </button>
+                  
+                  <button
+                    onClick={() => downloadGeoJson(item, index)}
                     disabled={item.isLoading}
                     className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2"
                   >
                     {item.isLoading ? (
                       <>
                         <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                        Loading...
+                        Carregando...
                       </>
                     ) : (
-                      'Copy & Download GeoJSON'
+                      'Baixar GeoJSON'
+                    )}
+                  </button>
+                  
+                  <button
+                    onClick={() => downloadKml(item, index)}
+                    disabled={item.isLoading}
+                    className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2"
+                  >
+                    {item.isLoading ? (
+                      <>
+                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
+                        Carregando...
+                      </>
+                    ) : (
+                      'Baixar KML'
                     )}
                   </button>
                 </div>
                 
                 {item.error && (
                   <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-                    Error: {item.error}
+                    Erro: {item.error}
                   </div>
                 )}
                 
                 {item.geoJson && (
                   <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
-                    <span className="text-green-600 font-medium">✓ GeoJSON loaded, copied to clipboard, and downloaded</span>
+                    <span className="text-green-600 font-medium">✓ Dados GeoJSON carregados e prontos para uso</span>
                   </div>
                 )}
               </div>
