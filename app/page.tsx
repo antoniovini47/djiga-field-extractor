@@ -1,6 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Label } from '@/components/ui/label';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 interface GeometryStorage {
   signedURL: string;
@@ -26,11 +30,28 @@ interface GraphQLResponse {
   };
 }
 
+interface GeoJsonFeature {
+  type: string;
+  geometry: {
+    type: string;
+    coordinates: number[][][] | number[][];
+  };
+  properties?: {
+    name?: string;
+    funcType?: string;
+  };
+}
+
+interface GeoJsonData {
+  type: string;
+  features: GeoJsonFeature[];
+}
+
 interface DownloadItem {
   uuid: string;
   name: string;
   signedURL: string;
-  geoJson?: any;
+  geoJson?: GeoJsonData;
   isLoading?: boolean;
   error?: string;
 }
@@ -49,7 +70,7 @@ export default function Home() {
   };
 
   // Convert GeoJSON to KML format
-  const convertGeoJsonToKml = (geoJson: any, name: string): string => {
+  const convertGeoJsonToKml = (geoJson: GeoJsonData, name: string): string => {
     let kml = `<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
   <Document>
@@ -58,7 +79,7 @@ export default function Home() {
 `;
 
     if (geoJson.type === 'FeatureCollection') {
-      geoJson.features.forEach((feature: any, index: number) => {
+      geoJson.features.forEach((feature: GeoJsonFeature, index: number) => {
         if (feature.geometry && feature.geometry.type === 'Polygon') {
           kml += `    <Placemark>
       <name>${feature.properties?.name || `${name} - Area ${index + 1}`}</name>
@@ -72,8 +93,9 @@ export default function Home() {
 `;
           
           // Convert coordinates from [lng, lat, alt] to lng,lat,alt format
-          if (feature.geometry.coordinates[0]) {
-            feature.geometry.coordinates[0].forEach((coord: number[]) => {
+          if (feature.geometry.coordinates && feature.geometry.coordinates[0]) {
+            const outerRing = feature.geometry.coordinates[0] as number[][];
+            outerRing.forEach((coord: number[]) => {
               kml += `              ${coord[0]},${coord[1]},${coord[2] || 0}\n`;
             });
           }
@@ -86,7 +108,8 @@ export default function Home() {
 `;
         } else if (feature.geometry && feature.geometry.type === 'MultiPoint') {
           // Handle reference points
-          feature.geometry.coordinates.forEach((coord: number[], pointIndex: number) => {
+          const coordinates = feature.geometry.coordinates as number[][];
+          coordinates.forEach((coord: number[], pointIndex: number) => {
             kml += `    <Placemark>
       <name>Reference Point ${pointIndex + 1}</name>
       <description>Reference point</description>
@@ -222,123 +245,177 @@ export default function Home() {
   };
 
   return (
-    <div className="container mx-auto p-6 max-w-4xl">
-      <h1 className="text-3xl font-bold mb-6">DJI Field Data Extractor</h1>
-      
-      {/* Instructions Section */}
-      <div className="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
-        <h2 className="text-xl font-semibold mb-4 text-blue-800">Instructions</h2>
-        <ol className="list-decimal list-inside space-y-2 text-gray-700">
-          <li>Abra o inspetor de elementos</li>
-          <li>Vá para a aba "Network"</li>
-          <li>Faça uma busca pelo nome do campo</li>
-          <li>Clique com o botão direito no último item da lista "graphql?name=lands"</li>
-          <li>Copie a resposta na aba "Copy &gt; Copy response"</li>
-          <li>Cole o conteúdo abaixo</li>
-          <li>Clique para gerar os links de download</li>
-        </ol>
-      </div>
-
-      {/* Input Section */}
-      <div className="mb-6">
-        <label htmlFor="jsonInput" className="block text-sm font-medium text-gray-700 mb-2">
-          Cole a Resposta GraphQL:
-        </label>
-        <textarea
-          id="jsonInput"
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          className="w-full h-64 p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
-          placeholder='Cole sua resposta GraphQL aqui (ex: {"data":{"lands":{"edges":[...]}}...})'
-        />
-      </div>
-
-      {/* Generate Button */}
-      <div className="mb-8">
-        <button
-          onClick={generateDownloadLinks}
-          disabled={!inputText.trim() || isGenerating}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-6 py-2 rounded-md font-medium transition-colors"
-        >
-          {isGenerating ? 'Gerando...' : 'Gerar Links de Download'}
-        </button>
-      </div>
-
-      {/* Download Links Section */}
-      {downloadItems.length > 0 && (
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold mb-4">Links de Download ({downloadItems.length} itens)</h2>
-          <div className="grid gap-4">
-            {downloadItems.map((item, index) => (
-              <div key={item.uuid} className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm">
-                <div className="mb-4">
-                  <h3 className="font-medium text-gray-900">{item.name}</h3>
-                  <p className="text-sm text-gray-500">UUID: {item.uuid}</p>
+    <div className="min-h-screen bg-gray-50 p-6">
+      <div className="container mx-auto max-w-7xl">
+        <div className="mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">DJI Field Data Extractor</h1>
+          <p className="text-gray-600 mt-2">Extrair e converter dados geoespaciais em <span className="text-blue-600 font-semibold">GeoJSON</span> e <span className="text-purple-600 font-semibold">KML</span></p>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-[calc(100vh-180px)]">
+          {/* Left Column - Input Section */}
+          <div className="space-y-4">
+            {/* Instructions Card */}
+            <Card className="h-fit">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Instruções</CardTitle>
+                <CardDescription>Siga estas etapas para extrair os dados do campo</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-2 text-sm">
+                <div className="space-y-1">
+                  <div className="flex items-start gap-2">
+                    <Badge variant="outline" className="mt-0.5 text-xs">1</Badge>
+                    <span>Abra o inspetor de elementos</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Badge variant="outline" className="mt-0.5 text-xs">2</Badge>
+                    <span>Vá para a aba &ldquo;Network&rdquo;</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Badge variant="outline" className="mt-0.5 text-xs">3</Badge>
+                    <span>Faça uma busca pelo nome do campo</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Badge variant="outline" className="mt-0.5 text-xs">4</Badge>
+                    <span>Clique com o botão direito no último item da lista &ldquo;graphql?name=lands&rdquo;</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Badge variant="outline" className="mt-0.5 text-xs">5</Badge>
+                    <span>Copie a resposta na aba &ldquo;Copy &gt; Copy response&rdquo;</span>
+                  </div>
+                  <div className="flex items-start gap-2">
+                    <Badge variant="outline" className="mt-0.5 text-xs">6</Badge>
+                    <span>Cole o conteúdo abaixo</span>
+                  </div>
                 </div>
-                
-                <div className="flex flex-wrap gap-2 mb-2">
-                  <button
-                    onClick={() => copyToClipboard(item, index)}
-                    disabled={item.isLoading}
-                    className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2"
-                  >
-                    {item.isLoading ? (
-                      <>
-                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                        Carregando...
-                      </>
-                    ) : (
-                      'Copiar conteúdo'
-                    )}
-                  </button>
-                  
-                  <button
-                    onClick={() => downloadGeoJson(item, index)}
-                    disabled={item.isLoading}
-                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2"
-                  >
-                    {item.isLoading ? (
-                      <>
-                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                        Carregando...
-                      </>
-                    ) : (
-                      'Baixar GeoJSON'
-                    )}
-                  </button>
-                  
-                  <button
-                    onClick={() => downloadKml(item, index)}
-                    disabled={item.isLoading}
-                    className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-md font-medium transition-colors flex items-center gap-2"
-                  >
-                    {item.isLoading ? (
-                      <>
-                        <div className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full"></div>
-                        Carregando...
-                      </>
-                    ) : (
-                      'Baixar KML'
-                    )}
-                  </button>
+              </CardContent>
+            </Card>
+
+            {/* Input Card */}
+            <Card className="flex-1">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-lg">Resposta GraphQL</CardTitle>
+                <CardDescription>Copie e cole a resposta copiada da aba de rede do navegador</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4 h-[calc(100%-80px)]">
+                <div className="space-y-2 flex-1 flex flex-col">
+                  <Label htmlFor="jsonInput">Resposta GraphQL</Label>
+                  <textarea
+                    id="jsonInput"
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    className="w-full flex-1 min-h-[200px] p-3 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm resize-none"
+                    placeholder='{"data":{"lands":{"edges":[...]}}...}'
+                  />
                 </div>
-                
-                {item.error && (
-                  <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-red-700 text-sm">
-                    Erro: {item.error}
+                <Button
+                  onClick={generateDownloadLinks}
+                  disabled={!inputText.trim() || isGenerating}
+                  className="w-full"
+                  size="lg"
+                >
+                  {isGenerating ? 'Gerando...' : 'Gerar Links de Download'}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column - Results Section */}
+          <div className="space-y-4">
+            <Card className="h-full">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="text-lg">Links de Download</CardTitle>
+                    <CardDescription>Opções de download geradas para seus dados</CardDescription>
+                  </div>
+                  {downloadItems.length > 0 && (
+                    <Badge variant="secondary">{downloadItems.length} itens</Badge>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="h-[calc(100%-100px)] overflow-auto">
+                {downloadItems.length === 0 ? (
+                  <div className="flex items-center justify-center h-full text-gray-500">
+                    <div className="text-center">
+                      <div className="text-4xl mb-2">🔍</div>
+                      <p>Nenhum dado gerado ainda</p>
+                      <p className="text-sm">Copie a resposta GraphQL e clique em &quot;Gerar Links de Download&quot;</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {downloadItems.map((item, index) => (
+                      <Card key={item.uuid} className="border-gray-200">
+                        <CardContent className="p-4">
+                          <div className="space-y-3">
+                            <div>
+                              <h3 className="font-medium text-gray-900 truncate">{item.name}</h3>
+                              <p className="text-xs text-gray-500 font-mono">{item.uuid}</p>
+                            </div>
+                            
+                            <div className="flex flex-wrap gap-2">
+                              <Button
+                                onClick={() => copyToClipboard(item, index)}
+                                disabled={item.isLoading}
+                                variant="outline"
+                                size="sm"
+                                className="flex-1 min-w-0"
+                              >
+                                {item.isLoading ? (
+                                  <div className="animate-spin h-3 w-3 border-2 border-gray-400 border-t-transparent rounded-full mr-1" />
+                                ) : null}
+                                <span className="truncate">Copiar</span>
+                              </Button>
+                              
+                              <Button
+                                onClick={() => downloadGeoJson(item, index)}
+                                disabled={item.isLoading}
+                                size="sm"
+                                className="flex-1 min-w-0 bg-green-600 hover:bg-green-700"
+                              >
+                                {item.isLoading ? (
+                                  <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full mr-1" />
+                                ) : null}
+                                <span className="truncate">GeoJSON</span>
+                              </Button>
+                              
+                              <Button
+                                onClick={() => downloadKml(item, index)}
+                                disabled={item.isLoading}
+                                size="sm"
+                                className="flex-1 min-w-0 bg-purple-600 hover:bg-purple-700"
+                              >
+                                {item.isLoading ? (
+                                  <div className="animate-spin h-3 w-3 border-2 border-white border-t-transparent rounded-full mr-1" />
+                                ) : null}
+                                <span className="truncate">KML</span>
+                              </Button>
+                            </div>
+                            
+                            {item.error && (
+                              <div className="p-2 bg-red-50 border border-red-200 rounded text-red-700 text-xs">
+                                <strong>Erro:</strong> {item.error}
+                              </div>
+                            )}
+                            
+                            {item.geoJson && !item.isLoading && (
+                              <div className="flex items-center gap-1 text-xs text-green-600">
+                                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                                <span>Dados carregados</span>
+                              </div>
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
                 )}
-                
-                {item.geoJson && (
-                  <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
-                    <span className="text-green-600 font-medium">✓ Dados GeoJSON carregados e prontos para uso</span>
-                  </div>
-                )}
-              </div>
-            ))}
+              </CardContent>
+            </Card>
           </div>
         </div>
-      )}
+      </div>
     </div>
   );
 }
