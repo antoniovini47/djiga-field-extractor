@@ -40,6 +40,72 @@ export default function Home() {
   const [downloadItems, setDownloadItems] = useState<DownloadItem[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
 
+  // Sanitize filename for cross-platform compatibility
+  const sanitizeFilename = (filename: string): string => {
+    return filename
+      .replace(/[<>:"/\\|?*]/g, '_')  // Replace invalid characters with underscore
+      .replace(/\s+/g, '_')           // Replace spaces with underscore
+      .trim();
+  };
+
+  // Convert GeoJSON to KML format
+  const convertGeoJsonToKml = (geoJson: any, name: string): string => {
+    let kml = `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${name}</name>
+    <description>Converted from GeoJSON</description>
+`;
+
+    if (geoJson.type === 'FeatureCollection') {
+      geoJson.features.forEach((feature: any, index: number) => {
+        if (feature.geometry && feature.geometry.type === 'Polygon') {
+          kml += `    <Placemark>
+      <name>${feature.properties?.name || `${name} - Area ${index + 1}`}</name>
+      <description>${feature.properties?.funcType || 'Polygon area'}</description>
+      <Polygon>
+        <extrude>1</extrude>
+        <altitudeMode>clampToGround</altitudeMode>
+        <outerBoundaryIs>
+          <LinearRing>
+            <coordinates>
+`;
+          
+          // Convert coordinates from [lng, lat, alt] to lng,lat,alt format
+          if (feature.geometry.coordinates[0]) {
+            feature.geometry.coordinates[0].forEach((coord: number[]) => {
+              kml += `              ${coord[0]},${coord[1]},${coord[2] || 0}\n`;
+            });
+          }
+          
+          kml += `            </coordinates>
+          </LinearRing>
+        </outerBoundaryIs>
+      </Polygon>
+    </Placemark>
+`;
+        } else if (feature.geometry && feature.geometry.type === 'MultiPoint') {
+          // Handle reference points
+          feature.geometry.coordinates.forEach((coord: number[], pointIndex: number) => {
+            kml += `    <Placemark>
+      <name>Reference Point ${pointIndex + 1}</name>
+      <description>Reference point</description>
+      <Point>
+        <coordinates>${coord[0]},${coord[1]},${coord[2] || 0}</coordinates>
+      </Point>
+    </Placemark>
+`;
+          });
+        }
+      });
+    }
+
+    kml += `  </Document>
+</kml>`;
+    
+    return kml;
+  };
+
   const generateDownloadLinks = async () => {
     try {
       setIsGenerating(true);
@@ -60,7 +126,9 @@ export default function Home() {
     }
   };
 
-  const fetchAndCopyGeoJson = async (item: DownloadItem, index: number) => {
+  const fetchGeoJsonData = async (item: DownloadItem, index: number) => {
+    if (item.geoJson) return item.geoJson; // Return cached data if available
+    
     try {
       // Update loading state
       setDownloadItems(prev => prev.map((prevItem, i) => 
@@ -89,16 +157,67 @@ export default function Home() {
         i === index ? { ...prevItem, geoJson, isLoading: false } : prevItem
       ));
 
-      // Copy to clipboard
-      await navigator.clipboard.writeText(JSON.stringify(geoJson, null, 2));
-      alert(`GeoJSON for "${item.name}" copied to clipboard!`);
+      return geoJson;
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setDownloadItems(prev => prev.map((prevItem, i) => 
         i === index ? { ...prevItem, isLoading: false, error: errorMessage } : prevItem
       ));
-      alert(`Error fetching GeoJSON: ${errorMessage}`);
+      throw error;
+    }
+  };
+
+  const copyToClipboard = async (item: DownloadItem, index: number) => {
+    try {
+      const geoJson = await fetchGeoJsonData(item, index);
+      const geoJsonString = JSON.stringify(geoJson, null, 2);
+      await navigator.clipboard.writeText(geoJsonString);
+      alert(`Conteúdo GeoJSON de "${item.name}" copiado para a área de transferência!`);
+    } catch (error) {
+      alert(`Erro ao copiar GeoJSON: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  };
+
+  const downloadGeoJson = async (item: DownloadItem, index: number) => {
+    try {
+      const geoJson = await fetchGeoJsonData(item, index);
+      const geoJsonString = JSON.stringify(geoJson, null, 2);
+      
+      const blob = new Blob([geoJsonString], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${sanitizeFilename(item.name)}.geojson`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      alert(`GeoJSON de "${item.name}" baixado com sucesso!`);
+    } catch (error) {
+      alert(`Erro ao baixar GeoJSON: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  };
+
+  const downloadKml = async (item: DownloadItem, index: number) => {
+    try {
+      const geoJson = await fetchGeoJsonData(item, index);
+      const kmlString = convertGeoJsonToKml(geoJson, item.name);
+      
+      const blob = new Blob([kmlString], { type: 'application/vnd.google-earth.kml+xml' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${sanitizeFilename(item.name)}.kml`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      alert(`KML de "${item.name}" baixado com sucesso!`);
+    } catch (error) {
+      alert(`Erro ao baixar KML: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
     }
   };
 
@@ -110,13 +229,13 @@ export default function Home() {
       <div className="mb-8 bg-blue-50 border border-blue-200 rounded-lg p-6">
         <h2 className="text-xl font-semibold mb-4 text-blue-800">Instructions</h2>
         <ol className="list-decimal list-inside space-y-2 text-gray-700">
-          <li>Open the elements inspector</li>
-          <li>Go to "Network" tab</li>
-          <li>Make some search of the field name</li>
-          <li>Click with the right on "graphql?name=lands"</li>
-          <li>Copy the response on Copy &gt; Copy response</li>
-          <li>Paste below the content</li>
-          <li>Click to generate download links</li>
+          <li>Abra o inspetor de elementos</li>
+          <li>Vá para a aba "Network"</li>
+          <li>Faça uma busca pelo nome do campo</li>
+          <li>Clique com o botão direito no último item da lista "graphql?name=lands"</li>
+          <li>Copie a resposta na aba "Copy &gt; Copy response"</li>
+          <li>Cole o conteúdo abaixo</li>
+          <li>Clique para gerar os links de download</li>
         </ol>
       </div>
 
@@ -168,7 +287,7 @@ export default function Home() {
                         Loading...
                       </>
                     ) : (
-                      'Download & Copy GeoJSON'
+                      'Copy & Download GeoJSON'
                     )}
                   </button>
                 </div>
@@ -181,7 +300,7 @@ export default function Home() {
                 
                 {item.geoJson && (
                   <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
-                    <span className="text-green-600 font-medium">✓ GeoJSON loaded and copied to clipboard</span>
+                    <span className="text-green-600 font-medium">✓ GeoJSON loaded, copied to clipboard, and downloaded</span>
                   </div>
                 )}
               </div>
