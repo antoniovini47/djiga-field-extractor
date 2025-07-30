@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import JSZip from 'jszip';
 
 interface GeometryStorage {
   signedURL: string;
@@ -244,6 +245,64 @@ export default function Home() {
     }
   };
 
+  const downloadAllAsZip = async (format: 'geojson' | 'kml') => {
+    if (downloadItems.length === 0) {
+      alert('Nenhum item para baixar. Gere os links primeiro.');
+      return;
+    }
+
+    try {
+      const zip = new JSZip();
+      let processedCount = 0;
+      const totalCount = downloadItems.length;
+
+      // Show progress
+      const progressMessage = `Baixando ${format.toUpperCase()}... (0/${totalCount})`;
+      alert(progressMessage);
+
+      for (let i = 0; i < downloadItems.length; i++) {
+        const item = downloadItems[i];
+        
+        try {
+          const geoJson = await fetchGeoJsonData(item, i);
+          
+          if (format === 'geojson') {
+            const geoJsonString = JSON.stringify(geoJson, null, 2);
+            zip.file(`${sanitizeFilename(item.name)}.geojson`, geoJsonString);
+          } else {
+            const kmlString = convertGeoJsonToKml(geoJson, item.name);
+            zip.file(`${sanitizeFilename(item.name)}.kml`, kmlString);
+          }
+          
+          processedCount++;
+        } catch (error) {
+          console.error(`Erro ao processar ${item.name}:`, error);
+          // Continue with other files even if one fails
+        }
+      }
+
+      if (processedCount === 0) {
+        alert('Nenhum arquivo foi processado com sucesso.');
+        return;
+      }
+
+      // Generate and download ZIP
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(zipBlob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `djiga-fields-${format}-${new Date().toISOString().split('T')[0]}.zip`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      
+      alert(`${processedCount} arquivos ${format.toUpperCase()} baixados com sucesso!`);
+    } catch (error) {
+      alert(`Erro ao baixar arquivos: ${error instanceof Error ? error.message : 'Erro desconhecido'}`);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gray-50 p-6">
       <div className="container mx-auto max-w-7xl">
@@ -333,6 +392,26 @@ export default function Home() {
                     <Badge variant="secondary">{downloadItems.length} itens</Badge>
                   )}
                 </div>
+                {downloadItems.length > 0 && (
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      onClick={() => downloadAllAsZip('geojson')}
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 bg-green-50 hover:bg-green-100 text-green-700 border-green-200"
+                    >
+                      📦 Baixar Todos GeoJSON
+                    </Button>
+                    <Button
+                      onClick={() => downloadAllAsZip('kml')}
+                      variant="outline"
+                      size="sm"
+                      className="flex-1 bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
+                    >
+                      📦 Baixar Todos KML
+                    </Button>
+                  </div>
+                )}
               </CardHeader>
               <CardContent className="h-[calc(100%-100px)] overflow-auto">
                 {downloadItems.length === 0 ? (
