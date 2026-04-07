@@ -16,7 +16,8 @@ export default function RootLayout({
       <body
         className={`antialiased bg-background text-foreground`}
       >
-        {children}
+       {/* {children} */}
+       loading
       </body>
     </html>
   );
